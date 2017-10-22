@@ -1,0 +1,27 @@
+HIGH LEVEL APPROACH:
+The Webcrawler gathers information from a fake social networking website. As described the crawler is supposed to crawl through different links in the social networking website and extract 5 secret flags hidden in those links.
+The crawling is implemented using HTTP Requests and Responses. 
+
+1) We have used the socket library to create a TCP socket which is connected to the host 'cs5700sp16.ccs.neu.edu' at port 80 to facilitate HTTP requests and responses. 
+2) In order to login into the Fakebook page we are supposed to collect the Cookie-information sent by the server in the HTTP response message. The CSRF token and the session ID are required to be sent in each subsequent GET request to a link.
+3) We have used html.parser library in order to find the anchor tags that contain the hyperlinks. Only those hyperlinks that belong to Fakebook website are crawled upon.
+4) We have used two lists visited_links and new_links. The visited_links list conatins those links that are visited by the crawler and the new_links list consists of thse urls that are new and hove not yet been traversed.
+5) We have implemented a while loop which will send a GET request for each new URL in the new_links list and the response received from the server is then passed through the parser to get new urls linked in that page.
+6) In order to extract the secret flags we have used BeautifulSoup library. The HTML data received from the server is passed to the the BeautifulSoup module which will then check the HTML data for <h2 class='secret_flag' style="color:red">FLAG: 64-characters-of-random-alphanumerics</h2> and then print the FLAG associated in the text.
+7) We have also defined a counter that counts the number of secret flags received. Once 5 secret flags are received the code exits.
+8) Error handling is implemented using if-elif ladder for various HTTP status codes such as-
+ For status code 301-Permanently moved we have extracted the new location of the URL provided in the server response and sent a GET request again to the new location.
+ For status code 500-Internal Server Error we have resent the Get request to the same URL again until response is received.
+ For status code 403 Forbidden and 404 Not Found we have abandoned the URL continued the crawling process with further links in the list.
+
+
+CHALLENGES FACED:
+1) Avoiding the crawler to enter an infinite loop was one major challenge. We had to monitor the crawler whether it is crawling a new URL or an already visited URL.
+2) Providing error handling for HTTP status codes 301 and 500 was a difficult task as the crawler has to resend GET requests to the same or different URL while already in a loop.
+3) Cookie-management for login POST request was hard as it took time to understand the role of csrf token and session Id in sending a valid POST and GET request to the server.
+
+TESTING OF THE CODE: 
+1) We first tested our code to check whether we are receiving proper server responses by printing the server response. 
+2) Once we logged in successfully we kept monitoring the visited_links and the new_links lists to check that no link is visited twice.
+3) Moreover, we also monitored the GET requests sent by the crawler to check whether it was entering a loop or not. 
+4) We tested our code for handling various HTTP status codes such as 500 and 301.

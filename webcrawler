@@ -1,0 +1,172 @@
+#! /usr/bin/python
+#IMPORT SOCKET, SYSTEM, REGULAR EXPRESSION, HTMLPARSER, BEAUTIFULSOUP LIBRARIES
+import socket
+import re
+from HTMLParser import HTMLParser
+from bs4 import BeautifulSoup
+import sys
+
+# CHECKING THE NUMBER OF COMMAND LINE ARGUMENTS. IF THE NUMBER OF COMMAND LINE ARGUMENTS
+# IS LESS THAN 4 THEN INITIALIZE THE FOLLOWING VARIABLES. 
+if len(sys.argv) < 4:
+	
+	#DEFINE SERVER AND OTHER LISTS
+	server = 'cs5700sp16.ccs.neu.edu'
+	entries = [ ]
+	entries_post = [ ]
+	entry_301 = [ ]
+	flag_counter = 0
+	visited_links = [ '/','/accounts/login/', '/accounts/register/' ,
+                          '/fakebook/', 'http://www.ccs.neu.edu/home/choffnes/',
+                          'http://www.northeastern.edu', 'mailto:choffnes@ccs.neu.edu' ]
+	new_links = [ ]
+
+	# DEFINE HTMLPARSER TO EXTRACT ANCHOR TAGS AND THE URLS PRESENT IN THE PAGE.
+	# IF THE URL IS NOT PRESENT IN THE VISITED_LINKS LIST THEN APPEND IT TO THE NEW_LINKS LIST
+	# AND THEN APPEND IT TO THE VISITED_LINKS LIST.
+	class myhtmlparser(HTMLParser):
+		def handle_starttag( self, tag, attributes):
+			if tag == 'a':
+                                for name, value in attributes:
+                                        if name == 'href':
+                                                link = value
+                                                if link not in visited_links :
+                                                        new_links.append(link)
+                                                        visited_links.append(link)
+
+	# IF THE NUMBER OF COMMAND LINE ARGUMENTS IS 1 OR 2 THEN PRINT USERNAME OF PASSWORD
+	# MISSING AS THEY ARE REQUIRED PARAMETERS 
+	if len(sys.argv)==1 or len(sys.argv)==2 :
+		print("Username or Password missing")
+	# IF THE NUMBER OF COMMAND LINE ARGUMENTS IS 3 AND THE LENGTH OF USERNAME IS EQUAL
+	# TO 9 THEN ASSIGN SECOND ARGUMENT TO USERNAME AND THIRD TO PASSWORD.
+	elif len(sys.argv)==3 and len(str(sys.argv[1]))==9 and len(str(sys.argv[2]))>=6:
+		UserName = str(sys.argv[1])
+		PassWord = str(sys.argv[2])
+
+		# CREATE A TCP SOCKET AND CONNECT TO SERVER AT PORT 80 AND SEND A GET HTTP REQUEST TO THE SERVER
+		mysock3 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		mysock3.connect((server, 80))
+		mysock3.send('GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: %s\n\n'%server)
+
+		# RECEIVE THE SERVER RESPONSE IN THE VARIABLE DATA3
+		data3 = mysock3.recv(4096)
+		# print data3
+		# SPLIT THE RESPONSE LINE WISE AND STORE IT IN AN ARRAY entries AND EXTRACT THE CSRF TOKEN AND SESSION ID FROM THE ARRAY
+		entries = re.split("\n+", data3)
+		csrf = entries[7].split()[1]
+		session = entries[8].split()[1]
+
+		csrf_TOKEN=csrf.replace("csrftoken=","")
+		csrf_TOKEN=csrf_TOKEN.replace(";","")
+		
+		# CREATE A NEW TCP SOCKET AND CONNECT TO PORT 80 AND SEND A POST REQUEST WHICH PASSES THE USERNAME,
+		# PASSWORD AND CSRFMIDDLEWARETOKEN ALONG WITH COOKIE INFORMATION IN THE HEADER PART
+		mysock4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		mysock4.connect((server, 80))
+		mysock4.send('POST /accounts/login/ HTTP/1.1\nHost: cs5700sp16.ccs.neu.edu\nConnection: \
+                             keep-alive\nContent-length: 109\nCache-Control: max-age=0\nContent-Type: \
+                             application/x-www-form-urlencoded\nReferer: \
+                             http://cs5700sp16.ccs.neu.edu/accounts/login/?next=/fakebook/\n \
+                             Accept-Language: en-US,en;q=0.8\nCookie: {} ; \
+                             {}\n\nusername={}&password={}&csrfmiddlewaretoken={}&next=%2Ffakebook%2F' \
+                             .format (csrf , session ,UserName, PassWord, csrf_TOKEN))
+		data4 = mysock4.recv(4096)
+		# print data4
+
+		# SPLIT THE SERVER RESPONSE TO EXTRACT THE NEW SESSION ID AND LOCATION.
+		entries_post = re.split("\n+", data4)
+		session_post = entries_post[7].split()[1]
+
+		location = entries_post[9].split()[1]
+
+		# AFTER SUCCESSFUL LOGIN SEND A GET REQUEST TO THE SERVER TO CONNECT TO FAKEBOOK HOME PAGE
+		mysock5 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		mysock5.connect((server, 80))
+		mysock5.send('GET {} HTTP/1.1\nHost: cs5700sp16.ccs.neu.edu\nConnection: keep-alive\nCache-Control: \
+                              max-age=0\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,\
+                              */*;q=0.8\nReferer: http://cs5700sp16.ccs.neu.edu/accounts/login/?next=/fakebook/\n\
+                              Accept-Language: en-US,en;q=0.8\nCookie: {} {}\n\n'\
+                              .format(location, csrf, session_post))
+		data5 = mysock5.recv(4096)
+		# print data5
+
+		# SEND THE SERVER RESPONSE RECEIVED FROM GET REQUEST TO THE HTML PARSER TO EXTRACT THE URLS PRESENT IN THE FETCHED PAGE.
+		token= myhtmlparser()
+		token.feed(data5)
+		
+		# WHILE THE NEW_LINKS LIST IS NOT EMPTY AND THE FLAG_COUNTER IS NOT EQUAL TO 5 THEN CRAWL THE FAKEBOOK SITE
+		j =0 
+		while j < len(new_links) and flag_counter != 5:
+			mysock5 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			mysock5.connect((server, 80))
+			
+			# SEND A GET REQUEST TO THE LINK PRESENT IN THE NEW_LINKS LIST AT INDEX 0.
+			mysock5.send ('\nGET {} HTTP/1.0\nHost: cs5700sp16.ccs.neu.edu\nConnection: \
+                                        keep-alive\nAccept: text/html,application/xhtml+xml,application/xml;\
+                                        q=0.9,image/webp,*/*;q=0.8\nReferer: http://cs5700sp16.ccs.neu.edu/fakebook/\n\
+                                        Accept-Language: en-US,en;q=0.8\nCookie: {} {}\n\n'\
+                                      .format(new_links[j], csrf, session_post))
+    			
+			# STORE THE VALUE OF THE LINK IN TEMP AND REMOVE THE LINK FROM NEW_LINKS LIST SINCE IT HAS BEEN VISITED
+			temp = new_links[j]
+			new_links.remove(new_links[j])
+			data6 = mysock5.recv(4096)
+			if (len(data6)< 1):
+				break
+ 
+			# IMPLEMENTING THE ERROR HANDLING FOR HTTP STATUS CODES 500, 301, 400 AND 404
+			if data6.split()[1] == '200':
+				pass
+			elif data6.split()[1] == '403' or data6.split()[1] == '404':
+				print ("forbidden or page not found error'")
+				pass
+			
+			# FOR 301 ERROR RESEND THE GET REQUEST FOR THE NEW LINK PROVIDED IN THE SERVER RESPONSE
+			elif data6.split()[1] == '301':
+        		# print ' page permanently moved'
+				entry_301 = re.split("\n+", data6)
+				location_301 = entry_301[9].split()[1]
+				mysock5 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				mysock5.connect((server, 80))
+				mysock5.send ('\nGET {} HTTP/1.0\nHost: cs5700sp16.ccs.neu.edu\nConnection: \
+                                                keep-alive\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,\
+                                                image/webp,*/*;q=0.8\nReferer: http://cs5700sp16.ccs.neu.edu/fakebook/\n\
+                                                Accept-Language: en-US,en;q=0.8\nCookie: {} {}\n\n'\
+                                              .format(location_301, csrf, session_post))
+				data6 = mysock5.recv(4096)
+				pass   
+			
+			# FOR 500 ERROR RESEND THE GET REQUEST TO THE SAME URL TO RECEIVE THE HTML DATA
+			elif data6.split()[1] == '500':
+				#print 'server error'
+				mysock5 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				mysock5.connect((server, 80))
+				mysock5.send ('\nGET {} HTTP/1.0\nHost: cs5700sp16.ccs.neu.edu\nConnection: \
+                                                keep-alive\nAccept: text/html,application/xhtml+xml,application/xml;\
+                                                q=0.9,image/webp,*/*;q=0.8\nReferer: http://cs5700sp16.ccs.neu.edu/fakebook/\n\
+                                                Accept-Language: en-US,en;q=0.8\nCookie: {} {}\n\n'\
+                                              .format(temp, csrf, session_post))
+				data6 = mysock5.recv(4096)
+				pass
+
+			#PASS THE SERVER RESPONSE TO THE PARSER TO EXTRACT NEW URLS PRESENT IN THE HTML DATA
+			token.feed(data6)
+
+			#DEFINE SOUP VARIABLE AND PASS SERVER RESPONSE TO CHECK WHETHER SECRET FLAG IS PRESENT OR NOT, IF PRESENT PRINT THE FLAG AND INCREASE THE FLAG COUNTER BY 1
+			soup = BeautifulSoup(data6)
+			flags = soup.find_all('h2',{"class":"secret_flag"},text=True)
+			for flag in flags:
+		       		if len(flag) is not 0:
+       					flag_text = flag.get_text()
+       					flag_counter += 1
+       					print(flag_text[6:70])
+				# EXIT AFTER 5 FLAGS ARE RECEIVED
+		        	else:
+                                        exit()
+	else:
+		print("invalid username or password")       	  
+
+#IF NUMBER OF COMMAND LINE ARGUMENTS IS MORE THAN 3 THEN PRINT NUMBER OF PARAMETERS EXCEEDED
+else :
+	print("number of parameters execeeded")
